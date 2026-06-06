@@ -1,0 +1,19 @@
+[
+  {"ticker":"FROG","name":"JFrog","notion_query":"FROG JFrog","page_id":"372ab10f-bd8b-81f4-a2cf-e44a1c3910a0","theme":"enterprise DevOps, software supply chain, artifact management, cloud-native delivery, green brand palette"},
+  {"ticker":"SNOW","name":"Snowflake","notion_query":"SNOW Snowflake","page_id":"","theme":"cloud data platform, data warehouse, blue icy premium cloud environment"},
+  {"ticker":"PANW","name":"Palo Alto Networks","notion_query":"PANW Palo Alto Networks","page_id":"","theme":"cybersecurity operations center, network defense, premium red and dark palette"},
+  {"ticker":"CRWD","name":"CrowdStrike","notion_query":"CRWD CrowdStrike","page_id":"","theme":"endpoint security, threat intelligence, cyber defense command center, red accents"},
+  {"ticker":"ZS","name":"Zscaler","notion_query":"ZS Zscaler","page_id":"","theme":"zero trust cloud security, secure access service edge, blue cyber cloud"},
+  {"ticker":"OKTA","name":"Okta","notion_query":"OKTA Okta","page_id":"","theme":"identity security, access management, clean blue enterprise SaaS"},
+  {"ticker":"CRCL","name":"Circle","notion_query":"CRCL Circle","page_id":"","theme":"stablecoin payments, digital finance, USDC, clean fintech blue"},
+  {"ticker":"HOOD","name":"Robinhood","notion_query":"HOOD Robinhood","page_id":"","theme":"retail investing app, brokerage, modern fintech green"},
+  {"ticker":"COIN","name":"Coinbase","notion_query":"COIN Coinbase","page_id":"","theme":"crypto exchange, institutional digital assets, blue finance interface"},
+  {"ticker":"V","name":"Visa","notion_query":"V Visa","page_id":"","theme":"global payments network, premium blue financial infrastructure"},
+  {"ticker":"MA","name":"Mastercard","notion_query":"MA Mastercard","page_id":"","theme":"global card network, payments, premium black with red and orange accents"},
+  {"ticker":"STNE","name":"StoneCo","notion_query":"STNE StoneCo","page_id":"","theme":"Brazilian payments, merchant acquiring, fintech green and modern retail"},
+  {"ticker":"URI","name":"United Rentals","notion_query":"URI United Rentals","page_id":"","theme":"equipment rental, construction machinery, industrial premium blue"},
+  {"ticker":"SUNB","name":"Sunbelt Rentals","notion_query":"SUNB Sunbelt Rentals","page_id":"","theme":"equipment rental, construction machinery, industrial yellow and green"},
+  {"ticker":"BKNG","name":"Booking Holdings","notion_query":"BKNG Booking Holdings","page_id":"","theme":"online travel, hotel marketplace, premium blue travel lobby"},
+  {"ticker":"EXPE","name":"Expedia Group","notion_query":"EXPE Expedia Group","page_id":"","theme":"online travel agency, flights and hotels, premium navy travel interface"},
+  {"ticker":"ABNB","name":"Airbnb","notion_query":"ABNB Airbnb","page_id":"","theme":"travel stays marketplace, premium home interior, coral accents"}
+]
