@@ -1,116 +1,174 @@
 import base64
 import json
 import os
-import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Iterable
 
 import requests
+from dotenv import load_dotenv
 from openai import OpenAI
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "lucasebert2004-1981/notion-company-covers")
-BRANCH = os.environ.get("GITHUB_REF_NAME", "main")
+load_dotenv()
+
+REPO = os.getenv("GITHUB_REPOSITORY", "lucasebert2004-1981/notion-company-covers")
+BRANCH = os.getenv("GITHUB_REF_NAME", "main")
+COMPANIES_FILE = Path(os.getenv("COMPANIES_FILE", "companies.json"))
 COVERS_DIR = Path("covers")
-COMPANIES_FILE = Path(os.environ.get("COMPANIES_FILE", "companies.json"))
-MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
-IMAGE_SIZE = os.environ.get("OPENAI_IMAGE_SIZE", "1536x864")
-NOTION_VERSION = os.environ.get("NOTION_VERSION", "2022-06-28")
+NOTION_API_BASE = "https://api.notion.com/v1/pages"
+NOTION_VERSION = os.getenv("NOTION_VERSION", "2022-06-28")
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1536x864")
+RUN_STAGE = os.getenv("RUN_STAGE", "full").strip().lower()
+ONLY_TICKERS = os.getenv("ONLY_TICKERS", "")
+REQUEST_TIMEOUT = 60
 
-STYLE_REFERENCE = """
-Create a premium horizontal Notion cover image in the same family as the reference covers: clean, polished, cinematic corporate-tech art, widescreen composition, strong company branding, realistic or semi-realistic environment, subtle lighting, premium materials, and a modern workspace or sector-relevant scene. The logo/company name must be prominent and legible. Avoid clutter, watermarks, captions, or infographic layouts.
-""".strip()
+PROMPT_TEMPLATE = (
+    "Create a premium horizontal Notion cover image for {name} ({ticker}). "
+    "Use a clean, polished, cinematic corporate-tech style, widescreen 16:9 composition, "
+    "strong company branding, realistic or semi-realistic environment, subtle lighting, "
+    "premium materials, and a sector-relevant scene. The {name} logo or clearly legible "
+    "company name must be the hero element. Make the identity unmistakable but tasteful. "
+    "Theme/context: {theme}. No extra captions, no watermarks, no busy infographic layout."
+)
 
 
-def load_companies() -> List[Dict[str, Any]]:
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise SystemExit(f"Missing required environment variable: {name}")
+    return value
+
+
+def load_companies() -> list[dict]:
+    if not COMPANIES_FILE.exists():
+        raise SystemExit(f"Missing required file: {COMPANIES_FILE}")
     with COMPANIES_FILE.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise SystemExit("companies.json must contain a top-level array")
+    return data
 
 
-def selected_companies(companies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    only = os.environ.get("ONLY_TICKERS", "").strip()
-    if not only:
-        return companies
-    wanted = {x.strip().upper() for x in only.split(",") if x.strip()}
-    return [c for c in companies if c.get("ticker", "").upper() in wanted]
+def parse_only_tickers(raw: str) -> set[str]:
+    return {item.strip().upper() for item in raw.split(",") if item.strip()}
 
 
-def prompt_for(company: Dict[str, Any]) -> str:
-    ticker = company["ticker"]
-    name = company["name"]
-    theme = company.get("theme", "premium corporate technology environment")
-    return f"""
-{STYLE_REFERENCE}
-
-Company: {name} ({ticker})
-Theme/context: {theme}
-
-Design requirements:
-- Use a 16:9 horizontal composition suitable for a Notion page cover.
-- Put the {name} brand/logo or clearly legible text \"{name}\" as the hero element.
-- Make the identity unmistakable but keep the overall image tasteful and premium.
-- The scene should visually relate to the company's business and sector.
-- Use brand-appropriate colors and cinematic lighting.
-- No extra captions, no fake UI labels except tasteful sector-relevant interface details, no watermark.
-""".strip()
+def filter_companies(companies: Iterable[dict], only_tickers: set[str]) -> list[dict]:
+    if not only_tickers:
+        return list(companies)
+    return [c for c in companies if c.get("ticker", "").upper() in only_tickers]
 
 
-def generate_image(client: OpenAI, company: Dict[str, Any]) -> bytes:
-    result = client.images.generate(
-        model=MODEL,
-        prompt=prompt_for(company),
-        size=IMAGE_SIZE,
-        n=1,
+def build_prompt(company: dict) -> str:
+    return PROMPT_TEMPLATE.format(
+        name=company["name"],
+        ticker=company["ticker"],
+        theme=company.get("theme", "premium corporate technology environment"),
     )
-    image_b64 = result.data[0].b64_json
-    if not image_b64:
-        raise RuntimeError(f"No image data returned for {company['ticker']}")
-    return base64.b64decode(image_b64)
 
 
-def notion_headers() -> Dict[str, str]:
-    token = os.environ.get("NOTION_TOKEN")
-    if not token:
-        raise RuntimeError("NOTION_TOKEN is not set")
-    return {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-    }
-
-
-def update_notion_cover(page_id: str, image_url: str) -> None:
-    if not page_id:
-        return
-    url = f"https://api.notion.com/v1/pages/{page_id}"
-    payload = {"cover": {"type": "external", "external": {"url": image_url}}}
-    resp = requests.patch(url, headers=notion_headers(), json=payload, timeout=30)
-    if resp.status_code >= 300:
-        raise RuntimeError(f"Notion update failed for {page_id}: {resp.status_code} {resp.text}")
-
-
-def raw_url(ticker: str) -> str:
+def build_raw_url(ticker: str) -> str:
     return f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/covers/{ticker}.png"
 
 
-def main() -> None:
-    COVERS_DIR.mkdir(exist_ok=True)
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    companies = selected_companies(load_companies())
-    if not companies:
-        raise RuntimeError("No companies selected")
+def generate_cover_image(client: OpenAI, company: dict, output_path: Path) -> None:
+    prompt = build_prompt(company)
+    print(f"[generate] {company['ticker']} - {company['name']}")
+    result = client.images.generate(
+        model=OPENAI_IMAGE_MODEL,
+        prompt=prompt,
+        size=OPENAI_IMAGE_SIZE,
+        n=1,
+    )
 
-    for company in companies:
-        ticker = company["ticker"].upper()
-        out = COVERS_DIR / f"{ticker}.png"
-        print(f"Generating {ticker} - {company['name']}...")
-        data = generate_image(client, company)
-        out.write_bytes(data)
-        print(f"Wrote {out} ({len(data):,} bytes)")
-        if company.get("page_id"):
-            url = raw_url(ticker)
-            print(f"Updating Notion cover for {ticker}: {url}")
-            update_notion_cover(company["page_id"], url)
-        time.sleep(1)
+    image_data = None
+    datum = result.data[0]
+    if getattr(datum, "b64_json", None):
+        image_data = base64.b64decode(datum.b64_json)
+    elif getattr(datum, "url", None):
+        response = requests.get(datum.url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        image_data = response.content
+    else:
+        raise RuntimeError("Image generation response did not include b64_json or url")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(image_data)
+    print(f"[saved] {output_path} ({len(image_data):,} bytes)")
+
+
+def verify_public_image(url: str) -> bool:
+    try:
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        return response.status_code == 200 and bool(response.content)
+    except requests.RequestException:
+        return False
+
+
+def update_notion_cover(page_id: str, image_url: str, notion_token: str) -> None:
+    payload = {
+        "cover": {
+            "type": "external",
+            "external": {
+                "url": image_url,
+            },
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {notion_token}",
+        "Content-Type": "application/json",
+        "Notion-Version": NOTION_VERSION,
+    }
+    response = requests.patch(
+        f"{NOTION_API_BASE}/{page_id}",
+        headers=headers,
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Failed to update Notion cover for page {page_id}: "
+            f"{response.status_code} {response.text}"
+        )
+
+
+def main() -> None:
+    if RUN_STAGE not in {"full", "generate", "notion"}:
+        raise SystemExit("RUN_STAGE must be one of: full, generate, notion")
+
+    companies = filter_companies(load_companies(), parse_only_tickers(ONLY_TICKERS))
+    if not companies:
+        print("No companies matched the current filter.")
+        return
+
+    if RUN_STAGE in {"full", "generate"}:
+        client = OpenAI(api_key=require_env("OPENAI_API_KEY"))
+        for company in companies:
+            ticker = company["ticker"].upper()
+            output_path = COVERS_DIR / f"{ticker}.png"
+            generate_cover_image(client, company, output_path)
+
+    if RUN_STAGE in {"full", "notion"}:
+        notion_token = require_env("NOTION_TOKEN")
+        for company in companies:
+            ticker = company["ticker"].upper()
+            page_id = (company.get("page_id") or "").strip()
+            image_url = build_raw_url(ticker)
+
+            if not page_id:
+                print(f"[skip] {ticker} has no page_id yet")
+                continue
+
+            if not verify_public_image(image_url):
+                print(
+                    f"[skip] {ticker} raw GitHub URL is not public yet: {image_url}. "
+                    "Publish the image before updating Notion."
+                )
+                continue
+
+            print(f"[notion] Updating cover for {ticker} -> {page_id}")
+            update_notion_cover(page_id, image_url, notion_token)
+            print(f"[done] Notion cover updated for {ticker}")
 
 
 if __name__ == "__main__":
